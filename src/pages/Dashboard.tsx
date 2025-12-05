@@ -1,39 +1,35 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
 import { Activity, AlertTriangle, Factory } from "lucide-react";
 import { Link } from "react-router-dom";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
+import HealthScore from "../components/HealthScore";
 import { useMachines } from "@/hooks/useMachines";
 import { useFaultLogs } from "@/hooks/useFaultLogs";
+import Notifications from "../components/Notifications";
 import { format } from "date-fns";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 
 const Dashboard = () => {
   const { machines, isLoading: machinesLoading } = useMachines();
   const { faultLogs, isLoading: faultLogsLoading } = useFaultLogs();
 
   if (machinesLoading || faultLogsLoading) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="text-center">Loading dashboard...</div>
-      </div>
-    );
+    return <div className="container mx-auto p-6 text-center">Loading dashboard...</div>;
   }
 
-  // Calculate statistics
-  const healthyCount = machines.filter(m => m.status === "healthy").length;
-  const warningCount = machines.filter(m => m.status === "warning").length;
-  const criticalCount = machines.filter(m => m.status === "critical").length;
+  const healthyCount = machines.filter((m) => m.status === "healthy").length;
+  const warningCount = machines.filter((m) => m.status === "warning").length;
+  const criticalCount = machines.filter((m) => m.status === "critical").length;
 
-  // Fault distribution data
-  const faultDistribution = faultLogs.reduce((acc, log) => {
-    acc[log.fault_type] = (acc[log.fault_type] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const localRaw = JSON.parse(localStorage.getItem("fault_logs") || "[]") as any[];
+  const merged = [...(localRaw || []), ...(faultLogs || [])];
 
-  const chartData = Object.entries(faultDistribution).map(([name, value]) => ({
-    name,
-    value,
-  }));
+  const distribution: Record<string, number> = {};
+  merged.forEach((f: any) => {
+    const key = f.fault_type || f.fault || "Unknown";
+    distribution[key] = (distribution[key] || 0) + 1;
+  });
+  const chartData = Object.entries(distribution).map(([name, value]) => ({ name, value }));
 
   const COLORS = [
     "hsl(var(--chart-1))",
@@ -43,87 +39,73 @@ const Dashboard = () => {
     "hsl(var(--chart-5))",
   ];
 
-  // Recent faults (last 5)
-  const recentFaults = [...faultLogs]
-    .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime())
+  const recentFaults = merged
+    .sort((a: any, b: any) => new Date(b.detected_at || b.ts || b.created_at).getTime() - new Date(a.detected_at || a.ts || a.created_at).getTime())
     .slice(0, 5);
+
+  const notifs = JSON.parse(localStorage.getItem("smartfactory_notifications") || "[]");
+  const unread = (notifs || []).filter((n: any) => !n.read).length;
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Factory Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Real-time machine health and fault monitoring</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Factory Dashboard</h1>
+          <p className="text-sm text-gray-500">Real-time machine health and fault monitoring</p>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="text-sm">Notifications</div>
+          <div className="bg-red-600 text-white text-xs rounded-full px-2 py-0.5">{unread}</div>
+        </div>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Machines</CardTitle>
-            <Factory className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{machines.length}</div>
-          </CardContent>
+          <CardHeader className="flex justify-between"><CardTitle>Total Machines</CardTitle><Factory className="h-4 w-4" /></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{machines.length}</div></CardContent>
         </Card>
 
-        <Card className="border-status-healthy/30">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Healthy</CardTitle>
-            <Activity className="h-4 w-4 text-status-healthy" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-status-healthy">{healthyCount}</div>
-          </CardContent>
+        <Card>
+          <CardHeader className="flex justify-between"><CardTitle>Healthy</CardTitle><Activity className="h-4 w-4 text-green-500" /></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{healthyCount}</div></CardContent>
         </Card>
 
-        <Card className="border-status-warning/30">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Warning</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-status-warning" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-status-warning">{warningCount}</div>
-          </CardContent>
+        <Card>
+          <CardHeader className="flex justify-between"><CardTitle>Warning</CardTitle><AlertTriangle className="h-4 w-4 text-yellow-500" /></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{warningCount}</div></CardContent>
         </Card>
 
-        <Card className="border-status-faulty/30">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Critical</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-status-faulty" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-status-faulty">{criticalCount}</div>
-          </CardContent>
+        <Card>
+          <CardHeader className="flex justify-between"><CardTitle>Critical</CardTitle><AlertTriangle className="h-4 w-4 text-red-500" /></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{criticalCount}</div></CardContent>
         </Card>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Machines Overview */}
         <Card>
-          <CardHeader>
-            <CardTitle>Machine Status</CardTitle>
-            <CardDescription>Current health status of all machines</CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle>Machine Status</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {machines.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No machines found. Add machines to get started.
-              </p>
+              <div className="text-sm text-gray-500 text-center py-6">No machines found.</div>
             ) : (
-              machines.map((machine) => (
-                <Link key={machine.id} to={`/machine/${machine.id}`}>
-                  <div className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-secondary/50 transition-colors cursor-pointer">
+              machines.map((m: any) => (
+                <Link to={`/machine/${m.id}`} key={m.id}>
+                  <div className="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
                     <div>
-                      <div className="font-medium text-foreground">Machine {machine.id}</div>
-                      <div className="text-sm text-muted-foreground">{machine.name}</div>
+                      <div className="font-medium">Machine {m.id}</div>
+                      <div className="text-xs text-gray-500">{m.name}</div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className="text-sm font-medium">{machine.health_score}%</div>
-                        <div className="text-xs text-muted-foreground">Health</div>
+
+                    <div className="flex items-center gap-4">
+                      <div style={{ width: 120 }}>
+                        <HealthScore temperature={m.temperature ?? 0} vibration={m.vibration ?? 0} load={m.current_load ?? 0} />
                       </div>
-                      <StatusBadge status={machine.status} />
+                      <div className="text-right">
+                        <div className="text-sm font-medium">{m.health_score ?? "-" }%</div>
+                        <div className="text-xs text-gray-500">Health</div>
+                      </div>
+                      <StatusBadge status={m.status} />
                     </div>
                   </div>
                 </Link>
@@ -132,90 +114,42 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Fault Distribution Chart */}
         <Card>
-          <CardHeader>
-            <CardTitle>Fault Distribution</CardTitle>
-            <CardDescription>Breakdown of detected fault types</CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle>Fault Distribution</CardTitle></CardHeader>
           <CardContent>
             {chartData.length === 0 ? (
-              <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
-                No fault data available
-              </div>
+              <div className="text-center py-10 text-gray-500">No faults detected</div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
+                <PieChart>
+                  <Pie data={chartData} dataKey="value" outerRadius={90} label>
+                    {chartData.map((entry, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
               </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent Fault Logs */}
       <Card>
-        <CardHeader>
-          <CardTitle>Recent Fault Logs</CardTitle>
-          <CardDescription>Latest detected faults across all machines</CardDescription>
-        </CardHeader>
+        <CardHeader><CardTitle>Recent Fault Logs</CardTitle></CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {recentFaults.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No faults detected
-              </p>
-            ) : (
-              recentFaults.map((fault) => {
-                const machine = machines.find(m => m.id === fault.machine_id);
-                const severityColor = {
-                  low: "text-muted-foreground",
-                  medium: "text-status-warning",
-                  high: "text-status-warning",
-                  critical: "text-status-faulty",
-                }[fault.severity];
-
-                return (
-                  <div 
-                    key={fault.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className={`h-4 w-4 ${severityColor}`} />
-                        <span className="font-medium text-foreground">{fault.fault_type}</span>
-                        <span className={`text-xs font-medium ${severityColor} uppercase`}>
-                          {fault.severity}
-                        </span>
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        Machine {fault.machine_id} - {machine?.name || 'Unknown'} • {fault.component}
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {format(new Date(fault.detected_at), "MMM d, HH:mm")}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+          {recentFaults.length === 0 ? (
+            <div className="text-center py-10 text-gray-500">No recent faults</div>
+          ) : (
+            recentFaults.map((f: any) => (
+              <div key={f.id || JSON.stringify(f)} className="flex justify-between p-3 border rounded mb-2">
+                <div>
+                  <div className="font-medium">{f.fault_type || f.fault}</div>
+                  <div className="text-xs text-gray-500">Machine {f.machine_id ?? f.machine_name}</div>
+                </div>
+                <div className="text-xs text-gray-500">{format(new Date(f.detected_at || f.ts || f.created_at), "MMM d, HH:mm")}</div>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
     </div>
